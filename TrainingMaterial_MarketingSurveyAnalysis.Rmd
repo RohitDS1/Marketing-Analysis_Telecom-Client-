@@ -1,0 +1,237 @@
+---
+title: "Marketing Survey Analysis - Training Material"
+author: "Rohit Shivthare"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Overview of our recent marketing analysis project for a large telecommunications company. The goal of this project was to analyze the client's marketing survey data to uncover insights about customer perceptions, engagement, and preferences across their different products.
+
+The data consisted of respondent variables like **Age, Gender, Income, Region, Persona, brand perceptions for 20 products**, states of engagement like **Awareness, Consumption, Consideration, Advocacy and Satisfaction**.
+We looked at states of engagement metrics segmented by demographics and persona types. We also analyzed the competitive landscape by comparing their brand image perceptions versus alternatives.
+
+The survey data file contains over 200,000 rows with dozens of columns capturing respondent demographics, perceptions, and outcomes for different products. Below are some key learnings on working with this data. In this project, I encountered multiple challenges. In this report, I will share three most important skills to tackle these challenges.
+
+#### Key Skills and Tips for Working with Project Data
+
+**Complex Skip Logic:**
+
+1. **Challenges:**
+   The survey uses complex skip logic based on awareness and consideration questions. This results in a significant amount of missing values. For example, ratings are only collected for products a respondent is aware of.
+
+2. **Skills Needed:**
+   This requires thoughtful handling of missing data in aggregations and models, like using na.rm=TRUE and testing model robustness.
+   
+   We need to account for this by:
+   
+   A. Carefully inspecting distributions of missing values
+   
+   B. Considering how to fill or impute missing values
+   
+   C. Testing models for bias due to missing data
+
+3. **Solution:**
+   Using is.na function before calculation of states of engagement rates
+
+```{r, eval=FALSE}  
+ advocacy_rates <- filtered_data[, .(Advocacy_Rate = 100 * sum(!is.na(get(Advocacy.name)) & get(Advocacy.name)) / sum(!is.na(get(Advocacy.name)))), by = Product.name]
+```
+
+   Using na.rm = TRUE for handling NA values. For example, computing average scores, removing missing values
+```{r, eval=FALSE}
+average_perceptions <- survey[, lapply(.SD, mean, na.rm = TRUE), .SDcols = all_perceptions, by = .(get(Product.name))]
+```
+
+**Deriving and Transforming Metrics:**
+
+1. **Challenges:**
+   Many metrics like brand perceptions are averages of related survey questions that need to be pre-computed. Some perceptions like **User Friendly, Fast, Battery Life, Camera, Sleek, Stylish, Status Symbol, Good Screen Size** are direct mean and some like **Boring, Bulky, Fragile, Expensive** are captured on opposite scales and need to be inverted before aggregating (e.g. negative perceptions).
+
+2. **Skills Needed:**
+   Understanding how to derive new variables like overall brand perceptions to simplify modeling and rankings based on the different perceptions
+   
+3. **Solution:**
+   
+   First, we calculated the average mean for all brand perceptions. Then, we inverted the values for negative perceptions (10 - x) and finally, took the average mean to calculate overall brand perception.
+
+```{r, eval=FALSE}
+average_perceptions <- survey[, lapply(.SD, mean, na.rm = TRUE), .SDcols = all_perceptions, by = .(get(Product.name))]
+
+# Rename the "get" column to the desired variable name
+setnames(average_perceptions, "get", Product.name)
+
+# Invert the scores for negative perceptions
+average_perceptions[, (negative_perceptions) := lapply(.SD, function(x) 10 - x), .SDcols = negative_perceptions]
+
+# Compute the mean of all perception scores
+average_perceptions[, Overall_Average_Perception := rowMeans(.SD, na.rm = TRUE), .SDcols = all_perceptions]
+average_perceptions[, Overall_Average_Perception := round.numerics(Overall_Average_Perception,2)]
+
+```
+
+   
+**Other Skills**
+     
+**Use Constant Variables:**
+   Store any value that will be repeatedly used as a constant variable. This promotes code readability and makes updates more manageable.
+   
+ Column Names:
+   
+```{r, eval=FALSE}
+id.name <- "id"
+Age.name <- "Age"
+Gender.name <- "Gender"
+Income.name <- "Income"
+Region.name <- "Region"
+Persona.name <- "Persona"
+Product.name <- "Product"
+Awareness.name <- "Awareness"
+Consideration.name <- "Consideration"
+Consumption.name <- "Consumption"
+Satisfaction.name <- "Satisfaction"
+Advocacy.name <- "Advocacy"
+```
+
+ New data columns created for analysis for states of engagement scores and Aggregated Engagement
+ 
+```{r, eval=FALSE}
+Awareness_Score.name <- "Awareness_Score"
+Consideration_Score.name <- "Consideration_Score"
+Consumption_Score.name <- "Consumption_Score"
+Advocacy_Score.name <- "Advocacy_Score"
+Satisfaction_Score.name <- "Satisfaction_Score"
+Aggregated_engagement.name <- "Aggregated_engagement"
+```
+
+ Constants for each unique valid value for respondent variables (Example - Region, Gender, Persona)
+  
+```{r, eval=FALSE}
+Region.South.name <- "South"
+Region.Midwest.name <- "Midwest"
+Region.West.name <- "West"
+Region.Northeast.name <- "Northeast"
+
+Gender.Male.name <- "Male"
+Gender.Female.name <- "Female"
+Gender.Other.name <- "Other"
+
+Persona.PrecociouslyPreoccupied.name <- "Precociously Preoccupied"
+Persona.TechnologicalTriumphalist.name <- "Technological Triumphalist"
+Persona.AmbivalentAdventurer.name <- "Ambivalent Adventurer"
+Persona.OutdoorsyOmbudsman.name <- "Outdoorsy Ombudsman"
+Persona.ConsistentCompromiser.name <- "Consistent Compromiser"
+Persona.MaterialisticMeditator.name <- "Materialistic Meditator"
+```
+
+**Create Self-contained Functions:**
+   Ensure functions are self-contained, minimizing reliance on outside variables. This enhances the function’s utility for reuse and simplifies debugging.
+   
+   1. Define a function to find percentage distribution for respondent variables (Age, Gender, Income, Region and Persona)
+   
+```{r, eval=FALSE}
+find_percentage <- function(data, variable) {
+  breaks <- NULL
+  labels <- NULL
+  
+  # Set breaks and labels for Age and Income
+  if (variable == Age.name) {
+    breaks <- Age.Groups
+    labels <- Age.Group.Labels
+  } else if (variable == Income.name) {
+    breaks <- Income.Groups
+    labels <- Income.Group.Labels
+  }
+  
+  # If breaks and labels are provided, create groups
+  if (!is.null(breaks) && !is.null(labels)) {
+    group_variable <- paste(variable, "Group", sep = "_")
+    data[, (group_variable) := cut(get(variable), breaks = breaks, labels = labels, include.lowest = TRUE)]
+  } else {
+    # If no breaks and labels, use the variable itself
+    group_variable <- variable
+  }
+
+  # Calculate percentage distribution
+  percentage_distribution <- data[, .(Percentage = .N / nrow(data) * 100), by = .(Group = get(group_variable))]
+
+   # Sort the result by the variable
+  setorder(percentage_distribution, Group)
+  
+  # Print formatted table
+  cat(paste("Percentage Distribution by", variable, "\n"))
+  knitr::kable(percentage_distribution, caption = paste("Percentage Distribution by", variable))
+
+}
+```
+  
+  2. Define a function to create age and income groups in the survey data
+  
+```{r, eval=FALSE}
+create_age_income_groups <- function(data) {
+  # Create Age Group variable
+  data[, (AgeGroupRVName) := cut(Age, breaks = Age.Groups, labels = Age.Group.Labels, include.lowest = TRUE)]
+  
+  # Create Income Group variable
+  data[, (IncomeGroupRVName) := cut(Income, breaks = Income.Groups, labels = Income.Group.Labels, include.lowest = TRUE)]
+  
+  return(data)
+}
+```
+
+  3. Define a function to calculate top products for selected segmented outcome
+  
+```{r, eval=FALSE}
+calculate_outcome_rates <- function(data, outcome, top_n = 5) {
+  # Calculate outcome rates for each product
+  outcome_rates <- data[, .(Outcome_Rate = 100 * sum(!is.na(get(outcome)) & get(outcome)) / sum(!is.na(get(outcome)))), by = Product.name]
+  
+  # Order by Outcome rates in descending order
+  outcome_rates <- outcome_rates[order(-Outcome_Rate)]
+  
+  # Rounding off to 2 decimal places
+  outcome_rates$Outcome_Rate <- round.numerics(outcome_rates$Outcome_Rate, digits = 2)
+  
+  # Select top products
+  top_products <- outcome_rates[1:min(top_n, .N), .(Product = get(Product.name), Outcome_Rate)]
+  
+  return(top_products)
+}
+```
+
+   4. Define a function to calculate Overall Brand Perception
+   
+```{r, eval=FALSE}
+calculate_brand_perception <- function(data, top_k = 5) {
+  
+  # Compute average scores, removing missing values
+  average_perceptions <- data[, lapply(.SD, mean, na.rm = TRUE), .SDcols = all_perceptions, by = .(get(Product.name))]
+  
+  # Rename the "get" column to the desired variable name
+  setnames(average_perceptions, "get", Product.name)
+  
+  # Invert the scores for negative perceptions
+  average_perceptions[, (negative_perceptions) := lapply(.SD, function(x) 10 - x), .SDcols = negative_perceptions]
+  
+  # Compute the mean of all perception scores
+  average_perceptions[, Overall_Average_Perception := rowMeans(.SD, na.rm = TRUE), .SDcols = all_perceptions]
+  average_perceptions[, Overall_Average_Perception := round.numerics(Overall_Average_Perception, 2)]
+  
+  # Rank the brands in decreasing order of Overall Average Perception scores
+  top_brands <- average_perceptions[order(-Overall_Average_Perception)][1:min(top_k, .N), .(Brand = get(Product.name), Overall_Average_Perception)]
+  
+ return(top_brands)
+}
+```
+
+**Creating constants and functions file:**
+   Creating constants and functions file and reading it in the static report and dynamic file
+   
+```{r, eval=FALSE}
+source("constants.R")
+source("functions.R")
+```  
+
