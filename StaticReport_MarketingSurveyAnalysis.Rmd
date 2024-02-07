@@ -1,0 +1,258 @@
+---
+title: "Static Report"
+author: "Rohit Shivthare"
+date: "October 2023"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+
+library(data.table)
+library(DT)
+library(dplyr)
+library(tidyverse)
+library(rmarkdown)
+library(ggplot2)
+library(broom)
+```
+
+```{r source}
+source("constants.R")
+source("functions.R")
+```
+
+```{r read_data}
+survey <- fread("../Data/mobile phone survey data.csv")
+```
+
+```{r constants}
+
+```
+
+```{r functions}
+
+```
+
+
+```{r explore_data, eval = FALSE}
+# To understand the structire of survey data
+str(survey)
+
+# To check the first 5 rows of data
+head(survey)
+
+# To find the unique values of respondent variables
+unique(survey$Gender)
+unique(survey$Region)
+unique(survey$Persona)
+unique(survey$Product)
+```
+
+
+# Calculations {.tabset}
+
+
+### Q1: Respondent Variables {.tabset}
+
+#### Age Group
+
+```{r q1_age.group}
+find_percentage(survey, Age.name)
+```
+
+#### Gender
+
+```{r q1_gender}
+find_percentage(survey, Gender.name)
+```
+
+#### Income Group
+
+```{r q1_income.group}
+find_percentage(survey, Income.name)
+```
+
+#### Region
+ 
+```{r region}
+find_percentage(survey, Region.name)
+```
+
+#### Persona
+
+```{r persona}
+find_percentage(survey, Persona.name)
+```
+
+
+### Q2:  Segmented Outcomes {.tabset}
+
+#### Part A
+
+What are the top 5 products by Awareness rates in the Northeast?
+
+```{r q2_a}
+top_products_awareness(survey, Region.Northeast.name, 5)
+```
+
+#### Part B
+
+What are the top 5 products by advocacy rates among female respondents who earn at least $100,000?
+
+```{r q2_b}
+top_products_advocacy(survey, Gender.Female.name, 100000, top_n = 5)
+```
+
+
+
+
+
+### Q3:  Overall Brand Perceptions {.tabset}
+
+What are the top 5 brands by the overall average perception?
+
+
+```{r q3}
+# Compute average scores, removing missing values
+average_perceptions <- survey[, lapply(.SD, mean, na.rm = TRUE), .SDcols = all_perceptions, by = .(get(Product.name))]
+
+# Rename the "get" column to the desired variable name
+setnames(average_perceptions, "get", Product.name)
+
+# Invert the scores for negative perceptions
+average_perceptions[, (negative_perceptions) := lapply(.SD, function(x) 10 - x), .SDcols = negative_perceptions]
+
+# Compute the mean of all perception scores
+average_perceptions[, Overall_Average_Perception := rowMeans(.SD, na.rm = TRUE), .SDcols = all_perceptions]
+average_perceptions[, Overall_Average_Perception := round.numerics(Overall_Average_Perception,2)]
+
+# Rank the brands in decreasing order of Overall Average Perception scores
+top_brands <- average_perceptions[order(-Overall_Average_Perception)][1:5, .(Product, Overall_Average_Perception)]
+
+# Display the results for the top 5 brands
+knitr::kable(top_brands, caption = "Top 5 Brands by Overall Average Perception Scores")
+
+```
+
+
+### Q4: Gaps in Outcomes {.tabset}
+
+
+#### Part A
+
+Which 5 products have the largest gap between the rate of consumption and the rate of awareness?  This would correspond to a formula of Difference = 100 * (Average Consumption - Average Awareness).  (Please use this exact formula.  Do not use the absolute value.  Focus only on the highest positive gaps.)  Display a bar graph showing the 5 largest differences in decreasing sorted order.
+
+```{r q4}
+# Apply functions to calculate scores for each binary outcome
+for (outcome in binary_outcomes) {
+  survey <- calculate_binary_scores(survey, outcome)
+}
+
+for (outcome in integer_outcomes) {
+  max_score <- max(survey[, .(max_score = max(get(outcome), na.rm = TRUE)), by = Product.name]$max_score)
+  survey <- calculate_integer_scores(survey, outcome, max_score)
+}
+```
+
+```{r q4_a}
+# Part A: Calculate the gap between the rate of consumption and the rate of awareness
+gap_consumption_awareness <- survey[, .(Average_Consumption = mean(Consumption_Score, na.rm = TRUE),
+                                       Average_Awareness = mean(Awareness_Score, na.rm = TRUE)),
+                                    by = Product.name]
+
+gap_consumption_awareness[, Consumption_Awareness_Difference := round.numerics(100 * (Average_Consumption - Average_Awareness),2)]
+
+# Select the top 5 products with the largest differences
+top_consumption_awareness <- gap_consumption_awareness[order(-Consumption_Awareness_Difference)][1:5, .(get(Product.name), Consumption_Awareness_Difference)]
+
+# Order the top 5 products in decreasing order
+top_consumption_awareness <- gap_consumption_awareness[order(-Consumption_Awareness_Difference)][1:5, .(Product, Consumption_Awareness_Difference)]
+
+# Create a bar graph with ordered products and labels
+bar_plot_consumption_awareness <- ggplot(top_consumption_awareness, aes(x = reorder(Product, -Consumption_Awareness_Difference), y = Consumption_Awareness_Difference)) +
+  geom_bar(stat = "identity", fill = "lightcoral") +
+  geom_text(aes(label = sprintf("%.2f%%", Consumption_Awareness_Difference)), vjust = -0.5, size = 3.5) +  # Add percentage labels
+  labs(title = "Top 5 Products with Largest Gap: Consumption vs Awareness",
+       x = "Product",
+       y = "Difference (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+# Display the bar graph
+print(bar_plot_consumption_awareness)
+```
+
+#### Part B
+
+Which 5 products have the largest gap between the rate of awareness and the average satisfaction?  This would correspond to a formula of Difference = 100 * (Average Awareness - Average Satisfaction).  (Please use this exact formula.  Do not use the absolute value.  Focus only on the highest positive gaps.)  Display a bar graph showing the 5 largest differences in decreasing sorted order.
+
+```{r q4_b}
+# Part A: Calculate the gap between the rate of awareness and rate of satisfaction
+gap_awareness_satisfaction <- survey[, .(Average_Satisfaction = mean(Satisfaction_Score, na.rm = TRUE),                                          Average_Awareness = mean(Awareness_Score, na.rm = TRUE)),
+                                     by = Product.name]
+
+gap_awareness_satisfaction[, Awareness_Satisfaction_Difference := round.numerics(100 * (Average_Awareness - Average_Satisfaction),2)]
+
+# Select the top 5 products with the largest differences
+top_awareness_satisfaction <- gap_awareness_satisfaction[order(-Awareness_Satisfaction_Difference)][1:5, .(get(Product.name), Awareness_Satisfaction_Difference)]
+
+# Order the top 5 products in decreasing order
+top_awareness_satisfaction <- gap_awareness_satisfaction[order(-Awareness_Satisfaction_Difference)][1:5, .(Product, Awareness_Satisfaction_Difference)]
+
+# Create a bar graph with ordered products and labels
+bar_plot_awareness_satisfaction <- ggplot(top_awareness_satisfaction, aes(x = reorder(Product, -Awareness_Satisfaction_Difference), y = Awareness_Satisfaction_Difference)) +
+  geom_bar(stat = "identity", fill = "lightcoral") +
+  geom_text(aes(label = sprintf("%.2f%%", Awareness_Satisfaction_Difference)), vjust = -0.5, size = 3.5) +  # Add percentage labels
+  labs(title = "Top 5 Products with Largest Gap: Awareness vs Satisfaction",
+       x = "Product",
+       y = "Difference (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+# Display the bar graph
+print(bar_plot_awareness_satisfaction)
+
+```
+
+
+### Q5: Aggregated Engagement {.tabset}
+
+#### Part A
+
+How much impact does respondent's overall trends in awareness have for that person's awareness with Buzzdial phones?
+
+```{r q5_a}
+# Call the calculate aggregated engagement
+survey <- calc_agg(survey, Awareness.name, Products.Buzzdial.name)
+
+# Part A: Awareness model
+aware_mod <- glm(Awareness ~ Age_Group + Gender + Income_Group + Region + 
+                  Persona + Aggregated_engagement, data = subset(survey, Product ==        Products.Buzzdial.name), 
+                 family = binomial())
+
+# Get tidy summary of the model with Odds Ratios and CIs
+aware_mod_summary <- tidy(aware_mod, exponentiate = TRUE, conf.int = TRUE)
+
+# Display the table
+print(aware_mod_summary)
+```
+
+#### Part B
+
+How much impact does respondent's overall trends in satisfaction have for that person's satisfaction with Buzzdial phones?
+
+```{r q5_b}
+survey <- calc_agg(survey, Satisfaction.name, Products.Buzzdial.name)
+
+sat_mod <- lm(Satisfaction ~ Age_Group + Gender + Income_Group + Region +
+               Persona + Aggregated_engagement, data = subset(survey, Product == Products.Buzzdial.name))
+
+# Get tidy summary of the model with coefficients, CIs, and p-values
+sat_mod_summary <- tidy(sat_mod, conf.int = TRUE)
+
+# Display the table
+print(sat_mod_summary)
+```
+

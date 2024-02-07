@@ -1,0 +1,357 @@
+---
+title: "Mobile Phones"
+output: flexdashboard::flex_dashboard
+runtime: shiny
+---
+
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(rmarkdown)
+library(knitr)
+library(Hmisc)
+library(DT)
+library(data.table)
+library(dplyr)
+library(tidyverse)
+library(rmarkdown)
+library(ggplot2)
+library(broom)
+library(formulaic)
+
+assignInNamespace("cedta.override", c(data.table:::cedta.override,"rmarkdown"), "data.table")
+
+opts_chunk$set(echo = FALSE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+
+```
+
+```{r read_data}
+survey <- fread("../Data/mobile phone survey data.csv")
+```
+
+```{r source_functions}
+source("constants.R")
+source("functions.R")
+```
+
+```{r constants}
+
+# Respondent variables
+respondent.variables <- c("Age_Group", "Gender", "Income_Group", "Region", "Persona")
+AgeGroupRVName <- "Age_Group"
+GenderRVName <- "Gender"
+IncomeGroupRVName <- "Income_Group"
+RegionRVName <- "Region"
+PersonaRVName <- "Persona"
+AggregatedEngagementName <- "Aggregated_engagement"
+BrandPerceptionName <- "Brand Perceptions"
+
+# State of Engagement
+states.of.engagement <- all_outcomes
+unique.age.groups <- Age.Group.Labels
+unique.genders <- c(Gender.Male.name, Gender.Female.name, Gender.Other.name)
+unique.income.groups <- Income.Group.Labels
+unique.regions <- c(Region.South.name, Region.Midwest.name, Region.West.name, Region.Northeast.name)
+unique.personas <- c(Persona.PrecociouslyPreoccupied.name, Persona.TechnologicalTriumphalist.name,
+                     Persona.AmbivalentAdventurer.name, Persona.OutdoorsyOmbudsman.name, 
+                     Persona.ConsistentCompromiser.name, Persona.MaterialisticMeditator.name)
+unique.brand.perceptions <- c("User Friendly", "Fast", "Battery Life", "Camera", "Sleek", "Stylish",
+                              "Status Symbol", "Good Screen Size", "Boring", "Bulky", "Fragile",
+                              "Expensive")
+unique.products <- c(Product.Smartophonic.name, Product.MobilitEE.name, Product.Screenz.name,
+                     Product.NextText.name, Product.MaybeMobile.name, Product.AppMap.name,
+                     Product.PhoneZone.name, Product.SpeedDials.name, Products.CommunicNation.name,
+                     Products.Mobzilla.name, Products.Phonatics.name, Products.RingRing.name,
+                     Products.NoButtons.name, Products.AllButtons.name, Products.Buzzdial.name,
+                     Products.MobileMayhem.name, Products.Triumphone.name, Products.Cellularity.name,
+                     Products.PocketDialz.name, Products.OfftheHook.name)
+
+model.variables <- c(AgeGroupRVName, GenderRVName, IncomeGroupRVName, RegionRVName, PersonaRVName, 
+                     AggregatedEngagementName, BrandPerceptionName)
+
+#Brand Perceptions
+bp.pattern <- "BP_"
+bp.traits <- names(survey)[grep(pattern = bp.pattern, x = names(survey))]
+```
+
+
+```{r functions}
+```
+
+
+Introduction
+=====================================  
+
+We are analyzing marketing survey data covering the products from your telecommunications company.
+
+The survey was given to `r survey[,length(unique(get(id.name)))]` respondents and covered `r survey[, length(unique(get(Product.name)))]` separate products.
+
+Click on the tabs to see different reports.Thanks!
+
+
+Q1
+===================================
+
+
+Row {data-height=500}
+-------------------------------------
+
+```{r q1_input}
+inputPanel(selectInput(inputId = "respondent_variable",
+    label = "Select Variable:", choices = respondent.variables, 
+    selected = respondent.variables[1]), checkboxInput(inputId = "respondent_show_percentages", 
+    label = "Show Percentages", value = TRUE))
+```
+
+-------------------------------------
+
+```{r q1_output}
+renderPlot({
+  
+  # Convert the selected respondent variable into the corresponding va
+  variable_name <- NULL
+  if (input$respondent_variable == AgeGroupRVName) {
+      variable_name <- Age.name
+  } else if (input$respondent_variable == GenderRVName) {
+      variable_name <- Gender.name
+  } else if (input$respondent_variable == IncomeGroupRVName) {
+      variable_name <- Income.name
+  } else if (input$respondent_variable == RegionRVName) {
+      variable_name <- Region.name
+  } else if (input$respondent_variable == PersonaRVName) {
+      variable_name <- Persona.name
+  }
+  
+  # Use the find_percentage function with the survey data and converte
+  tab <- find_percentage(data = survey, variable = variable_name)
+
+  tab <- percentage.table(x = survey[, .SD[1], by = id.name][, get(input$respondent_variable)])
+  barplot(height = tab, space=0.01, las = 1, main = input$respondent_variable, ylab = "Percentage", xlab = input$respondent_variable, ylim = c(0, 1.2*max(tab, na.rm = TRUE)), col = "dodgerblue")
+  
+  if(input$respondent_show_percentages == TRUE){
+    space_val = 0
+    text(x = -0.4 + 1:length(tab) * (1+space_val), y = tab, labels = sprintf("%.1f%%", tab), pos = 3)
+  }
+})
+```
+
+
+
+Q2
+=====================================  
+
+
+Row {data-height=500}
+-------------------------------------
+
+```{r q2_input}
+inputPanel(
+  selectInput(inputId = "SO_state_of_engagement", label = "State of Engagement:", choices = states.of.engagement, selected = states.of.engagement[1]),
+  selectInput(inputId = "SO_age_group", label = "Age Group:", choices = unique.age.groups, multiple = TRUE, selected = unique.age.groups[1]),
+  selectInput(inputId = "SO_gender", label = "Gender:", choices = unique.genders, multiple = TRUE, selected = unique.genders[1]),
+  selectInput(inputId = "SO_income_group", label = "Income Group:", choices = unique.income.groups, multiple = TRUE, selected = unique.income.groups[1]),
+  selectInput(inputId = "SO_region", label = "Region:", choices = unique.regions, multiple = TRUE, selected = unique.regions[1]),
+  selectInput(inputId = "SO_persona", label = "Persona:", choices = unique.personas, multiple = TRUE, selected = unique.personas[1]),
+  sliderInput(inputId = "SO_num_products", label = "Number of Products to Display:", min = 1, max = 20, value = 5),
+)
+```
+
+-------------------------------------
+
+```{r q2_output}
+
+renderPlot({
+  
+  # Call the function to create age and income groups
+  survey <- create_age_income_groups(survey)
+
+  # Call the filter_data_for_question2 function to get filtered data
+  filtered_data <- filter_state_of_engagement_data(
+    data = survey,
+    age_groups = input$SO_age_group,
+    genders = input$SO_gender,
+    income_groups = input$SO_income_group,
+    regions = input$SO_region,
+    personas = input$SO_persona
+  )
+  
+  # Call the calculate_outcome_rates function
+  top_products <- calculate_outcome_rates(data = filtered_data, outcome = input$SO_state_of_engagement, top_n = input$SO_num_products)
+  
+  # Call the display_outcomes function
+  display_outcomes(top_products = top_products, outcome = input$SO_state_of_engagement, state_of_engagement = input$SO_state_of_engagement)
+}, height = 500)
+
+```
+
+
+Q3
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+```{r q3_input}
+inputPanel(
+  selectInput(inputId = "BP_age_group", label = "Age Group:", choices = unique.age.groups, multiple = TRUE, selected = unique.age.groups[1]),
+  selectInput(inputId = "BP_gender", label = "Gender:", choices = unique.genders, multiple = TRUE, selected = unique.genders[1]),
+  selectInput(inputId = "BP_income_group", label = "Income Group:", choices = unique.income.groups, multiple = TRUE, selected = unique.income.groups[1]),
+  selectInput(inputId = "BP_region", label = "Region:", choices = unique.regions, multiple = TRUE, selected = unique.regions[1]),
+  selectInput(inputId = "BP_persona", label = "Persona:", choices = unique.personas, multiple = TRUE, selected = unique.personas[1]),
+  sliderInput(inputId = "BP_num_brands", label = "Number of Brands to Display:", min = 1, max = 20, value = 5),
+)
+
+```
+
+-------------------------------------
+
+```{r q3_output}
+DT::renderDataTable({
+  
+  # Call the filter_data_for_question2 function to get filtered data
+  filtered_data <- filter_state_of_engagement_data(
+    data = survey,
+    age_groups = input$BP_age_group,
+    genders = input$BP_gender,
+    income_groups = input$BP_income_group,
+    regions = input$BP_region,
+    personas = input$BP_persona
+  )
+  
+  # Call the calculate_brand_perception function
+  top_brands <- calculate_brand_perception(
+    data = filtered_data,
+    top_k = input$BP_num_brands
+  )
+
+# Return the top_brands data frame
+  top_brands
+}, caption = paste("Top", input$BP_num_brands, "Brands by Overall Brand Perception"), options = list(scrollY = "400px"))
+```
+
+Q4
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+```{r q4_input}
+inputPanel(
+  selectInput(inputId = "first_outcome", label = "First Outcome:", choices = states.of.engagement),
+  selectInput(inputId = "second_outcome", label = "Second Outcome:", choices = states.of.engagement),
+  sliderInput(inputId = "outcome_num_top_products", label = "Number of Top Products:", min = 1, max = 20, value = 5),
+  checkboxInput(inputId = "outcome_display_percentages", label = "Display Percentages", value = FALSE),
+  numericInput(inputId = "outcome_num_digits", label = "Digits for Percentages:", min = 1, max = 3, value = 2)
+)
+
+```
+
+-------------------------------------
+
+```{r q4_output}
+renderPlot({
+  
+    # Apply functions to calculate scores for each binary outcome
+    for (outcome in binary_outcomes) {
+    survey <- calculate_binary_scores(survey, outcome)
+    }
+
+    for (outcome in integer_outcomes) {
+    max_score <- max(survey[, .(max_score = max(get(outcome), na.rm = TRUE)), by =  Product.name]$max_score)
+    survey <- calculate_integer_scores(survey, outcome, max_score)
+    }
+  
+    gap_scores <- survey[, .(Average_First_Outcome = mean(get(paste0(input$first_outcome, "_Score")),                               na.rm = TRUE),
+                             Average_Second_Outcome = mean(get(paste0(input$second_outcome, "_Score")),                              na.rm = TRUE)),
+                             by = Product.name]
+
+    gap_scores <- gap_scores[, Outcome_Difference := round.numerics(100 * (Average_First_Outcome - Average_Second_Outcome), input$outcome_num_digits)]
+
+    # Select the top products with the largest differences
+    top_gap_scores <- gap_scores[order(-Outcome_Difference)][1:min(input$outcome_num_top_products, .N),
+                                 .(Product = get(Product.name), Outcome_Difference)]
+
+    # Create a bar graph
+    bar_plot <- ggplot(top_gap_scores, aes(x = reorder(Product, -Outcome_Difference), y = Outcome_Difference)) +
+      geom_bar(stat = "identity", fill = "dodgerblue") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Increase X-axis labels size
+      plot.title = element_text(hjust = 0.5) # Center the title
+      ) +
+      labs(title = paste("Top", input$outcome_num_top_products, "Products with Largest Gap:", input$first_outcome, "vs", input$second_outcome),
+           x = "Product",
+           y = paste("Difference (%) between", input$first_outcome, "and", input$second_outcome))
+
+# Display percentages on the bars if selected
+if (input$outcome_display_percentages == TRUE) {
+  bar_plot <- bar_plot +
+    geom_text(
+      aes(label = sprintf("%.1f%%", Outcome_Difference)),
+      position = position_stack(vjust = 0.5),  # Adjust vjust as needed
+      size = 4,  # Increase text size
+      color = "black"  # Change text color to white
+    )
+}
+    print(bar_plot)
+  }, height = 700)
+```
+
+Q5
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+
+```{r q5_input}
+fluidRow(
+    column(
+      width = 4,
+      selectInput(inputId = "em_state", label = "State of Engagement:", choices = states.of.engagement, selected = states.of.engagement[1]),
+      selectInput(inputId = "em_product", label = "Brand", choices = unique.products, selected = unique.products[1], multiple = TRUE),
+      selectInput(inputId = "em_age_group", label = "Age", choices = unique.age.groups, selected = unique.age.groups, multiple = TRUE),
+      selectInput(inputId = "em_gender", label = "Gender", choices = unique.genders, selected = unique.genders, multiple = TRUE),
+      selectInput(inputId = "em_income_group", label = "Income", choices = unique.income.groups, selected = unique.income.groups, multiple = TRUE),
+      selectInput(inputId = "em_region", label = "Region", choices = unique.regions, selected = unique.regions, multiple = TRUE),
+      selectInput(inputId = "em_persona", label = "Persona", choices = unique.personas, selected = unique.personas, multiple = TRUE),
+      selectInput(inputId = "em_inputs", label = "Choose Inputs:", choices = c(AgeGroupRVName, Gender.name, Region.name, IncomeGroupRVName, Persona.name, AggregatedEngagementName, bp.traits), selected = c(respondent.variables), multiple = TRUE)
+    ),
+    
+    column(
+      width = 8,
+      dataTableOutput("table_output")
+    )
+  )
+```
+
+-------------------------------------
+
+```{r q5_output}
+output$table_output <- renderDataTable({
+  
+  # Call the calculate aggregated engagement
+  survey <- calc_agg_multiple_product(survey, input$em_state, input$em_product)
+
+  subdat <- survey[get(Product.name) %in% input$em_product]
+ 
+  if(input$em_state == Satisfaction.name){
+    model.type <- "linear"
+  }
+  if(input$em_state != Satisfaction.name){
+    model.type <- "logistic"
+  }
+  
+  res <- fit.model(dt = subdat, outcome.name = input$em_state, input.names = input$em_inputs, model.type = model.type)
+  
+  datatable(data = res, options = list(
+    paging = TRUE,  # Enable paging
+    pageLength = 20,  # Initial number of rows per page
+    lengthMenu = c(20, 30, 40),  # Options for number of rows per page
+    scrollY = '700px',  # Set the fixed height of the table
+    scrollX = FALSE,  # Disable horizontal scrolling
+    dom = 'lrtip'  # Define the layout of datatable elements
+  ))
+})
+```
+
